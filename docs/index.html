@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tesla Cabin Sentinel — Live Demo</title>
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 760px;
+         margin: 2em auto; padding: 0 1em; color: #222; line-height: 1.5; }
+  .badge { display: inline-block; background: #b45309; color: #fff;
+           font-weight: 700; padding: .15em .6em; border-radius: 1em;
+           font-size: .85em; }
+  .future { background: #fef3c7; border: 1px solid #f59e0b; padding: 1em;
+            border-radius: 8px; }
+  label { display: block; margin: .6em 0; }
+  select, input[type=number] { font-size: 1em; padding: .2em .4em; }
+  button { font-size: 1em; padding: .4em 1em; margin: .3em .3em .3em 0;
+           cursor: pointer; }
+  #result { border: 1px solid #ccc; border-radius: 8px; padding: 1em;
+            margin-top: 1em; font-size: 1.05em; }
+  .CLEAR { border-left: 8px solid #16a34a; }
+  .WATCH { border-left: 8px solid #d97706; }
+  .ALERT { border-left: 8px solid #dc2626; }
+  .ESCALATED { border-left: 8px solid #7c3aed; }
+  #timeline { white-space: pre-wrap; background: #f6f6f6; padding: 1em;
+              border-radius: 8px; margin-top: 1em; }
+  a { color: #0369a1; }
+</style>
+</head>
+<body>
+<h1>🚗 Tesla Cabin Sentinel</h1>
+<p><span class="badge">DEMO DATA</span> — pretend cars, pretend cabin frames.
+No real car is involved, and nothing here connects to a Tesla.</p>
+<div class="future"><strong>FUTURE-API honesty note:</strong> Tesla's Fleet
+API exposes no cabin camera or rear-occupant sensor today. This demo runs
+the app's <em>real</em> decision logic — the same grace → alert →
+escalation ladder the Python app uses — against frames you describe.
+Live checks of a real car become possible the day Tesla ships the
+endpoints in <a href="https://github.com/rtmalikian/tesla-cabin-sentinel/blob/main/API_PROPOSAL.md">API_PROPOSAL.md</a>.</div>
+
+<h2>Try one cabin frame</h2>
+<label>Who does the cabin check see?
+  <select id="occupant">
+    <option value="child">A child</option>
+    <option value="pet">A pet (dog / cat)</option>
+    <option value="adult">An adult</option>
+    <option value="item">A forgotten item</option>
+    <option value="none">Nobody (cabin empty)</option>
+  </select>
+</label>
+<label id="itemRow" style="display:none">Forgotten what?
+  <select id="itemKind">
+    <option>bag</option><option>phone</option><option>laptop</option>
+    <option>keys</option><option>stroller</option>
+  </select>
+</label>
+<label>Detector confidence: <input id="confidence" type="number" value="95" min="0" max="100"> % (below 70% = watch only)</label>
+<label>Cabin temperature: <input id="temp" type="number" value="" placeholder="e.g. 88"> °F (blank = unknown)</label>
+<label><input id="climate" type="checkbox"> Dog Mode / Keep Climate On is running</label>
+<label><input id="locked" type="checkbox" checked> Car is locked</label>
+<label><input id="adult" type="checkbox"> An adult is present with them</label>
+<label><input id="driving" type="checkbox"> Car is driving (not parked)</label>
+<label>How long alone so far: <input id="alone" type="number" value="3" min="0"> minutes</label>
+<label>Minutes since the first alert (if one fired): <input id="sinceAlert" type="number" value="" placeholder="blank = no alert yet"> minutes</label>
+<button onclick="assess()">Assess this frame</button>
+<div id="result">Press “Assess this frame” to see the verdict.</div>
+
+<h2>Or run a full scenario</h2>
+<p>Each button replays one of the simulator's six scenarios, minute by minute.</p>
+<button onclick="scenario('child')">Child left behind</button>
+<button onclick="scenario('hot')">Hot cabin</button>
+<button onclick="scenario('dog')">Pet with Dog Mode</button>
+<button onclick="scenario('unsure')">Uncertain detection</button>
+<button onclick="scenario('bag')">Forgotten bag</button>
+<button onclick="scenario('adult')">Child with an adult</button>
+<div id="timeline"></div>
+
+<p><a href="https://github.com/rtmalikian/tesla-cabin-sentinel">Get the free,
+open-source app on GitHub</a> — same logic, plus the AI chat endpoint and
+the API proposal for Tesla.</p>
+
+<script>
+const GRACE = 2, ESCALATE = 5, DANGER = 95, THRESHOLD = 70, CLIMATE_SAFE = 85;
+
+function evaluate(o) {
+  if (o.driving || o.adult) return {state: "CLEAR",
+    text: o.driving ? "The car is driving — occupancy checks only apply while parked."
+                    : "An adult is present — nobody is left behind."};
+  if (o.occupant === "none") return {state: "CLEAR", text: "Nobody detected in the car."};
+  if (o.occupant === "item") return {state: "WATCH",
+    text: "You left a forgotten " + o.itemKind + " — worth a reminder, not an alarm."};
+  if (o.confidence < THRESHOLD) return {state: "WATCH",
+    text: "Possible " + o.occupant + ", but only " + o.confidence + "% sure (threshold "
+      + THRESHOLD + "%) — watching, not alerting."};
+  if (o.occupant === "adult") return {state: "CLEAR", text: "An adult is sitting in the parked car."};
+  if (o.occupant === "pet" && o.climate && o.temp !== null && o.temp <= CLIMATE_SAFE)
+    return {state: "WATCH", text: "Your pet is in the car with the climate on and the cabin at "
+      + o.temp + "°F — comfortable, so this is a watch, not an alert."};
+  if (!o.locked) return {state: "ALERT",
+    text: "A " + o.occupant + " is alone in the car and it is NOT locked — check on them now."};
+  if (o.temp !== null && o.temp >= DANGER) return {state: "ESCALATED",
+    text: "URGENT: a " + o.occupant + " is alone in the car and the cabin is already "
+      + o.temp + "°F — go to the car NOW."};
+  if (o.alone < GRACE) return {state: "WATCH",
+    text: "A " + o.occupant + " has been alone for " + o.alone + " minute(s) — alert fires in "
+      + (GRACE - o.alone) + " more minute(s) if nobody returns."};
+  if (o.sinceAlert !== null && o.sinceAlert >= ESCALATE) return {state: "ESCALATED",
+    text: "ESCALATED: a " + o.occupant + " has been alone for " + o.alone + " minute(s) and the alert "
+      + o.sinceAlert + " minute(s) ago went unanswered — alerting your second contact now."};
+  return {state: "ALERT",
+    text: "A " + o.occupant + " has been alone in the locked car for " + o.alone
+      + " minute(s) — alerting you now."};
+}
+
+function readForm() {
+  const t = document.getElementById("temp").value;
+  const s = document.getElementById("sinceAlert").value;
+  return {
+    occupant: document.getElementById("occupant").value,
+    itemKind: document.getElementById("itemKind").value,
+    confidence: +document.getElementById("confidence").value || 0,
+    temp: t === "" ? null : +t,
+    climate: document.getElementById("climate").checked,
+    locked: document.getElementById("locked").checked,
+    adult: document.getElementById("adult").checked,
+    driving: document.getElementById("driving").checked,
+    alone: +document.getElementById("alone").value || 0,
+    sinceAlert: s === "" ? null : +s,
+  };
+}
+
+function assess() {
+  const r = evaluate(readForm());
+  const el = document.getElementById("result");
+  el.className = r.state;
+  el.innerHTML = "<strong>" + r.state + "</strong> — " + r.text;
+}
+
+document.getElementById("occupant").addEventListener("change", (e) => {
+  document.getElementById("itemRow").style.display =
+    e.target.value === "item" ? "block" : "none";
+});
+
+function scenario(name) {
+  const base = {occupant: "child", confidence: 96, temp: null, climate: false,
+                locked: true, adult: false, driving: false, itemKind: "bag",
+                alone: 0, sinceAlert: null};
+  let frames = [];
+  if (name === "child") frames = [
+    {...base, alone: 0}, {...base, alone: 1}, {...base, alone: 2, sinceAlert: 0},
+    {...base, alone: 4, sinceAlert: 2}, {...base, alone: 7, sinceAlert: 5},
+    {...base, occupant: "none", confidence: 99}];
+  if (name === "hot") frames = [{...base, confidence: 95, temp: 102, alone: 0}];
+  if (name === "dog") frames = [
+    {...base, occupant: "pet", confidence: 94, climate: true, temp: 72, alone: 0},
+    {...base, occupant: "pet", confidence: 94, climate: true, temp: 73, alone: 8},
+    {...base, occupant: "none", confidence: 99}];
+  if (name === "unsure") frames = [
+    {...base, confidence: 55, alone: 0}, {...base, confidence: 58, alone: 8}];
+  if (name === "bag") frames = [{...base, occupant: "item", confidence: 92}];
+  if (name === "adult") frames = [
+    {...base, adult: true}, {...base, occupant: "none", confidence: 99}];
+  const lines = frames.map((f) => {
+    const r = evaluate(f);
+    return "[" + r.state + "] " + r.text;
+  });
+  document.getElementById("timeline").textContent = lines.join("\n\n");
+}
+</script>
+</body>
+</html>

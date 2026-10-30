@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tesla-cabin-sentinel"
+version = "0.1.0"
+description = "Cabin Sentinel for Tesla — rear-occupant safety for parked cars: detects a child or pet left alone in a locked car, alerts after a short grace period, and escalates if unanswered or the cabin gets dangerously hot, with OpenAI-compatible AI endpoints (FUTURE-API: Tesla exposes no cabin camera yet)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Raphael Malikian", email = "rtmalikian@gmail.com" }]
+keywords = ["tesla", "fleet-api", "openai-compatible", "llm", "ai", "rear-occupant-alert", "child-safety", "pet-safety", "dog-mode", "cabin-safety", "ollama", "ev", "model-3", "model-y", "model-s", "model-x", "cybertruck"]
+dependencies = [
+    "requests>=2.31",
+    "python-dotenv>=1.0",
+]
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Home Automation",
+]
+
+[project.scripts]
+tcsentinel = "tesla_cabin_sentinel.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rtmalikian/tesla-cabin-sentinel"
+Issues = "https://github.com/rtmalikian/tesla-cabin-sentinel/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
